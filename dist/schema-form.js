@@ -170,16 +170,50 @@ angular.module('schemaForm').provider('sfBuilder', ['sfPathProvider', function(s
         }
       }
     },
+    // condition: function(args) {
+    //   // Do we have a condition? Then we slap on an ng-if on all children,
+    //   // but be nice to existing ng-if.
+    //   if (args.form.condition) {
+    //     var evalExpr = 'evalExpr(' + args.path +
+    //                    '.condition, { model: model, "arrayIndex": $index})';
+    //     if (args.form.key) {
+    //       var strKey = sfPathProvider.stringify(args.form.key);
+    //       evalExpr = 'evalExpr(' + args.path + '.condition,{ model: model, "arrayIndex": $index, ' +
+    //                  '"modelValue": model' + (strKey[0] === '[' ? '' : '.') + strKey + '})';
+    //     }
+    //
+    //     var children = args.fieldFrag.children || args.fieldFrag.childNodes;
+    //     for (var i = 0; i < children.length; i++) {
+    //       var child = children[i];
+    //       var ngIf = child.getAttribute('ng-if');
+    //       child.setAttribute(
+    //         'ng-if',
+    //         ngIf ?
+    //         '(' + ngIf +
+    //         ') || (' + evalExpr + ')'
+    //         : evalExpr
+    //       );
+    //     }
+    //   }
+    // },
+
     condition: function(args) {
       // Do we have a condition? Then we slap on an ng-if on all children,
       // but be nice to existing ng-if.
       if (args.form.condition) {
         var evalExpr = 'evalExpr(' + args.path +
-                       '.condition, { model: model, "arrayIndex": $index})';
+            '.condition, { model: model, "arrayIndex": $index})';
         if (args.form.key) {
           var strKey = sfPathProvider.stringify(args.form.key);
+          var arrayDepth = args.form.key.filter(function(e) { return e === '' }).length;
+          var arrayIndices = '$index';
+          for (var i = 1; i < arrayDepth; i++) {
+            arrayIndices = Array(i + 1).join('$parent.$parent.') + '$index,' + arrayIndices;
+          }
+
           evalExpr = 'evalExpr(' + args.path + '.condition,{ model: model, "arrayIndex": $index, ' +
-                     '"modelValue": model' + (strKey[0] === '[' ? '' : '.') + strKey + '})';
+              '"arrayIndices": [' + arrayIndices + '],' +
+              '"modelValue": model' + (strKey[0] === '[' ? '' : '.') + strKey + '})';
         }
 
         var children = args.fieldFrag.children || args.fieldFrag.childNodes;
@@ -187,11 +221,11 @@ angular.module('schemaForm').provider('sfBuilder', ['sfPathProvider', function(s
           var child = children[i];
           var ngIf = child.getAttribute('ng-if');
           child.setAttribute(
-            'ng-if',
-            ngIf ?
-            '(' + ngIf +
-            ') || (' + evalExpr + ')'
-            : evalExpr
+              'ng-if',
+              ngIf ?
+              '(' + ngIf +
+              ') || (' + evalExpr + ')'
+                  : evalExpr
           );
         }
       }
@@ -424,15 +458,30 @@ angular.module('schemaForm').provider('schemaFormDecorators',
               return lst;
             };
 
+            // scope.buttonClick = function($event, form) {
+            //   if (angular.isFunction(form.onClick)) {
+            //     form.onClick($event, form);
+            //   } else if (angular.isString(form.onClick)) {
+            //     if (sfSchema) {
+            //       //evaluating in scope outside of sfSchemas isolated scope
+            //       sfSchema.evalInParentScope(form.onClick, {'$event': $event, form: form});
+            //     } else {
+            //       scope.$eval(form.onClick, {'$event': $event, form: form});
+            //     }
+            //   }
+            // };
+
             scope.buttonClick = function($event, form) {
+              var arrayIndices = form.key.filter(function(e) { return e === parseInt(e, 10)});
+
               if (angular.isFunction(form.onClick)) {
-                form.onClick($event, form);
+                form.onClick($event, form, arrayIndices[arrayIndices.length-1], arrayIndices);
               } else if (angular.isString(form.onClick)) {
                 if (sfSchema) {
                   //evaluating in scope outside of sfSchemas isolated scope
-                  sfSchema.evalInParentScope(form.onClick, {'$event': $event, form: form});
+                  sfSchema.evalInParentScope(form.onClick, {'$event': $event, form: form, arrayIndex: arrayIndices[arrayIndices.length-1], arrayIndices: arrayIndices});
                 } else {
-                  scope.$eval(form.onClick, {'$event': $event, form: form});
+                  scope.$eval(form.onClick, {'$event': $event, form: form, arrayIndex: arrayIndices[arrayIndices.length-1], arrayIndices: arrayIndices});
                 }
               }
             };
@@ -558,7 +607,7 @@ angular.module('schemaForm').provider('schemaFormDecorators',
 
                     var evalExpr = 'evalExpr(form.condition,{ model: model, "arrayIndex": arrayIndex})';
                     if (form.key) {
-                      evalExpr = 'evalExpr(form.condition,{ model: model, "arrayIndex": arrayIndex, "modelValue": model' + sfPath.stringify(form.key) + '})';
+                      evalExpr = 'evalExpr(form.condition,{ model: model, "arrayIndex": arrayIndex, "arrayIndices": [' + form.key.filter(function(e) { return e === parseInt(e, 10)}).toString() + '], "modelValue": model' + sfPath.stringify(form.key) + '})';
                     }
 
                     angular.forEach(element.children(), function(child) {
@@ -1971,15 +2020,36 @@ angular.module('schemaForm').directive('sfField',
               return lst;
             };
 
+            // scope.buttonClick = function($event, form) {
+            //   if (angular.isFunction(form.onClick)) {
+            //     form.onClick($event, form);
+            //   } else if (angular.isString(form.onClick)) {
+            //     if (sfSchema) {
+            //       //evaluating in scope outside of sfSchemas isolated scope
+            //       sfSchema.evalInParentScope(form.onClick, {'$event': $event, form: form});
+            //     } else {
+            //       scope.$eval(form.onClick, {'$event': $event, form: form});
+            //     }
+            //   }
+            // };
             scope.buttonClick = function($event, form) {
+              var arrayDepth = form.key.filter(function(e) { return e === '' }).length;
+              var arrayIndices = (arrayDepth > 1 ? Array(arrayDepth - 1).join('$parent.$parent.$parent.') + '$parent.$parent.$index,' : '');
+              for (var i = arrayDepth; i > 2; i--) {
+                arrayIndices += Array(i - 1).join('$parent.$parent.$parent.') + '$index,';
+              }
+              arrayIndices += '$index';
+              arrayIndices = scope.$eval('[' + arrayIndices + ']');
+
               if (angular.isFunction(form.onClick)) {
-                form.onClick($event, form);
+
+                form.onClick($event, form, arrayIndices[arrayDepth-1], arrayIndices);
               } else if (angular.isString(form.onClick)) {
                 if (sfSchema) {
                   //evaluating in scope outside of sfSchemas isolated scope
-                  sfSchema.evalInParentScope(form.onClick, {'$event': $event, form: form});
+                  sfSchema.evalInParentScope(form.onClick, {'$event': $event, form: form, arrayIndex: arrayIndices[arrayDepth-1], arrayIndices: arrayIndices});
                 } else {
-                  scope.$eval(form.onClick, {'$event': $event, form: form});
+                  scope.$eval(form.onClick, {'$event': $event, form: form, arrayIndex: '$index', arrayIndices: '[' + arrayIndices + ']'});
                 }
               }
             };
